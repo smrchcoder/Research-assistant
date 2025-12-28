@@ -1,0 +1,53 @@
+from fastapi import FastAPI
+from .routes import file_router, query_router
+from .core import settings, vector_db_client, db_client
+import logging
+from sqlalchemy import text
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(), logging.FileHandler("app.log")],
+)
+
+logger = logging.getLogger(__name__)
+
+app = FastAPI(
+    title="Document Processing API",
+    description="API for processing PDF documents through extraction, cleaning, and chunking stages",
+    version="1.0.0",
+)
+
+
+@app.get("/health")
+def health_check():
+    """Health check endpoint"""
+    db_status = "unknown"
+    try:
+        # Test database connection
+        with db_client.engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        db_status = "healthy"
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
+        db_status = "unhealthy"
+    
+    return {
+        "status": "healthy" if db_status == "healthy" else "degraded",
+        "message": "API is running",
+        "database": db_status,
+        "vector_db_items": vector_db_client.collection.count(),
+        "settings": {
+            "chunk_size": settings.chunk_size,
+            "chunk_overlap": settings.chunk_overlap,
+            "embedding_model": settings.openai_embedding_model,
+        },
+    }
+
+
+# Include routers with prefix
+app.include_router(file_router, prefix="/api", tags=["documents"])
+
+# Include router for query
+app.include_router(query_router, tags=['queries'])
