@@ -10,6 +10,7 @@ class SourceInfo(BaseModel):
 
 class QueryRequest(BaseModel):
     """Request model for query endpoint"""
+    session_id: str= Field(...,description="session id associated with redis")
     query: str = Field(..., min_length=1, description="User's question")
     top_k: int = Field(default=5, ge=1, le=20, description="Number of documents to retrieve")
     temperature: float = Field(default=0.3, ge=0, le=2, description="LLM temperature")

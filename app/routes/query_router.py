@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, status
 from ..schema import QueryResponse, QueryRequest,SourceInfo
 from ..services import QueryService, QueryPromptTemplate
 import logging
+from ..memory.session_store import session_store
 
 logger = logging.getLogger(__name__)
 
@@ -14,22 +15,6 @@ async def receive_query(request: QueryRequest) -> QueryResponse:
     """
     Process a user query using RAG (Retrieval-Augmented Generation)
     
-    How Request Model is Used:
-    - FastAPI automatically validates the incoming JSON against QueryRequest
-    - If validation fails, returns 422 error with details
-    - Converts JSON to QueryRequest object with typed attributes
-    
-    How Response Model is Used:
-    - FastAPI validates the returned QueryResponse object
-    - Serializes it to JSON according to the model schema
-    - Generates OpenAPI documentation with proper schema
-    
-    Steps:
-    1. Generate query embeddings
-    2. Retrieve similar documents from vector DB
-    3. Format context with retrieved documents
-    4. Generate answer using LLM with context
-    
     Args:
         request: Query request with question and parameters (validated by QueryRequest model)
         
@@ -37,6 +22,12 @@ async def receive_query(request: QueryRequest) -> QueryResponse:
         QueryResponse: Generated answer with source citations (validated by response_model)
     """
     try:
+        session_data = session_store.get_session(request.session_id)
+        if not session_data:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Invalid session or Session Expired",
+                )
         logger.info(f"Processing query: {request.query[:100]}...")
         logger.info(f"Request params - top_k: {request.top_k}, temperature: {request.temperature}, model: {request.model}")
         
@@ -51,7 +42,7 @@ async def receive_query(request: QueryRequest) -> QueryResponse:
         
         if not documents:
             logger.warning("No relevant documents found")
-            # Return QueryResponse instance (FastAPI serializes to JSON)
+
             return QueryResponse(
                 query_id=query_service.query_id,
                 query=request.query,
@@ -72,7 +63,6 @@ async def receive_query(request: QueryRequest) -> QueryResponse:
             temperature=request.temperature
         )
         
-        # Create SourceInfo objects (Pydantic models)
         sources = [
             SourceInfo(
                 document_id=meta.get('document_id', 'Unknown'),
@@ -82,7 +72,6 @@ async def receive_query(request: QueryRequest) -> QueryResponse:
             for meta in metadatas
         ]
         
-        # Return QueryResponse instance (FastAPI validates and serializes)
         response = QueryResponse(
             query_id=query_service.query_id,
             query=request.query,
@@ -90,6 +79,7 @@ async def receive_query(request: QueryRequest) -> QueryResponse:
             sources=sources,
             num_sources=len(sources)
         )
+        session_store.add_message(session_id=request.session_id, question=request.query, answer=answer)
         
         logger.info(f"Successfully processed query: {query_service.query_id}")
         return response

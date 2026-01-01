@@ -1,5 +1,6 @@
-from ..core import llm_client, settings
+from ..core import settings
 from typing import List, Dict, Any
+from ..llm import llm_client
 import logging
 
 logger = logging.getLogger(__name__)

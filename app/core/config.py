@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     
     # File Upload Configuration
     upload_directory: str = Field(default="./pdfs", env="UPLOAD_DIRECTORY")
+    redis_host: str = "localhost"
+    redis_port: int = Field(default=6379, env="REDIS_PORT")
+    redis_db: int = Field(default=0, env="REDIS_DB")
+
+    session_ttl_seconds: int = Field(default=3600, env="SESSION_TTL_SECONDS")  # 1 hour
     
     class Config:
         env_file = ".env"
