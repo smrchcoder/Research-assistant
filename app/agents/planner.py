@@ -117,6 +117,17 @@ class Planner(LLMAgent):
         if not query or not query.strip():
             raise ValueError("Query cannot be empty")
 
+        # Track reasoning: query analysis
+        self.add_reasoning_step(
+            "analysis",
+            f"Analyzing query complexity and intent",
+            {
+                "query": query,
+                "query_length": len(query),
+                "has_history": len(self.conversation_history) > 0,
+            },
+        )
+
         user_prompt = self._build_user_prompt(query)
         messages = self._build_messages(user_prompt)
         raw_response = self._call_llm(messages)
@@ -148,12 +159,26 @@ class Planner(LLMAgent):
         if missing_fields:
             raise ValueError(f"Plan missing required fields: {missing_fields}")
 
-        # Add to reasoning steps
-        self.add_reasoning_step({"step": "planning", "plan": plan, "query": query})
-
-        logger.info(
-            f"Generated plan with {len(plan.get('search_queries', []))} search queries"
+        # Track reasoning: plan generation
+        search_queries = plan.get("search_queries", [])
+        self.add_reasoning_step(
+            "planning",
+            f"Generated {len(search_queries)} search strategies",
+            {
+                "num_queries": len(search_queries),
+                "question_type": plan.get("question_type"),
+                "strategies": [
+                    q.get("rationale", "")
+                    for q in search_queries
+                    if isinstance(q, dict)
+                ],
+            },
         )
+        # Why is strategies field required ,
+        # are we mentioning the LLM to generate something like this,
+        #  I dont this jsonwill agev rationale field:TODO
+
+        logger.info(f"Generated plan with {len(search_queries)} search queries")
         return plan
 
     def execute(self, query: str) -> Dict[str, Any]:
@@ -164,6 +189,9 @@ class Planner(LLMAgent):
             query: User's question
 
         Returns:
-            Generated retrieval plan
+            Generated retrieval plan with reasoning trace
         """
-        return self.plan_questions(query)
+        plan = self.plan_questions(query)
+        # Include reasoning trace in the plan
+        plan["reasoning"] = self.get_reasoning_trace()
+        return plan

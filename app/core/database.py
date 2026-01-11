@@ -107,7 +107,7 @@ class VectorDBClient:
             raise
 
     def search_similar(
-        self, query_embedding: List[float], n_results: int = 5
+        self, query_embedding: List[float], n_results: int = 5, where: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
         Search for similar chunks using embedding similarity
@@ -115,14 +115,20 @@ class VectorDBClient:
         Args:
             query_embedding: Query embedding vector
             n_results: Number of results to return
+            where: Optional filter dictionary (e.g., {"document_id": {"$in": ["doc1.pdf", "doc2.pdf"]}})
 
         Returns:
             Dictionary with search results
         """
         try:
-            results = self._collection.query(
-                query_embeddings=[query_embedding], n_results=n_results
-            )
+            query_params = {
+                "query_embeddings": [query_embedding],
+                "n_results": n_results
+            }
+            if where:
+                query_params["where"] = where
+            
+            results = self._collection.query(**query_params)
             return results
         except Exception as e:
             logger.error(f"Failed to search ChromaDB: {e}")

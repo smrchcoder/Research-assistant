@@ -4,6 +4,7 @@ import json
 import logging
 import uuid
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
 from ..models import PlannerConfig
@@ -38,13 +39,35 @@ class Agent(ABC):
             "system_prompt": self.system_prompt,
         }
 
-    def add_reasoning_step(self, step: Dict[str, Any]) -> None:
-        """Add a reasoning step to the agent's history."""
-        if not isinstance(step, dict):
-            raise TypeError("Reasoning step must be a dictionary")
-        if "step" not in step:
-            raise ValueError("Reasoning step must contain a 'step' key")
-        self.reasoning_steps.append(step)
+    def add_reasoning_step(
+        self, step_type: str, description: str, data: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """Add a reasoning step to the agent's history with timestamp.
+
+        Args:
+            step_type: Type of reasoning step (e.g., 'analysis', 'planning', 'evaluation')
+            description: Human-readable description of what happened
+            data: Optional additional structured data about the step
+        """
+        reasoning_entry = {
+            "agent": self.__class__.__name__,
+            "step_type": step_type,
+            "description": description,
+            "timestamp": datetime.time().isoformat(),
+            "data": data or {},
+        }
+        self.reasoning_steps.append(reasoning_entry)
+        logger.debug(
+            f"{self.__class__.__name__} reasoning: {step_type} - {description}"
+        )
+
+    def get_reasoning_trace(self) -> List[Dict[str, Any]]:
+        """Return complete reasoning trace for this agent.
+
+        Returns:
+            List of reasoning steps with timestamps and context
+        """
+        return self.reasoning_steps.copy()
 
     @abstractmethod
     def execute(self, *args, **kwargs) -> Any:

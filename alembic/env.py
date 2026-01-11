@@ -24,7 +24,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Import all SQLAlchemy models so Alembic can detect them
-from app.models import *
+from app.schema import *
 
 # Reference to model metadata for autogenerate
 target_metadata = db_client.Base.metadata

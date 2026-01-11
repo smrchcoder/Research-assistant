@@ -1,39 +1,37 @@
-from pydantic import BaseModel, Field, ConfigDict
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from datetime import datetime
-from typing import Optional
+from sqlalchemy.orm import relationship
+
+from ..core import db_client
 
 
-class DocumentBase(BaseModel):
-    """Base schema for Document with common fields"""
-    filename: str = Field(..., description="Name of the uploaded document")
-    
+class Document(db_client.Base):
+    """
+    SQLAlchemy model for document metadata
 
-class DocumentCreate(DocumentBase):
-    """Schema for creating a new document"""
-    pass
+    Represents metadata about uploaded PDF documents including
+    processing status, page count, and chunk information.
+    """
 
+    __tablename__ = "documents"
 
-class DocumentUpdate(BaseModel):
-    """Schema for updating document metadata"""
-    no_of_pages: Optional[int] = Field(None, ge=0, description="Number of pages in the document")
-    total_chunks: Optional[int] = Field(None, ge=0, description="Total number of text chunks")
-    status: Optional[str] = Field(None, description="Processing status (pending, processing, completed, failed)")
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    filename = Column(String, nullable=False, index=True, unique=True)
+    no_of_pages = Column(Integer, nullable=False, default=0)
+    total_chunks = Column(Integer, nullable=False, default=0)
+    status = Column(
+        String, nullable=False, default="pending"
+    )  # pending, processing, completed, failed
+    uploaded_at = Column(DateTime, nullable=False, default=datetime.now)
+    # Filesystem path where the uploaded PDF is stored (optional)
+    path = Column(String, nullable=True, index=False)
 
+    # One-to-many: Document belongs to a single Chat
+    chat_id = Column(Integer, ForeignKey("chats.id", ondelete="CASCADE"), nullable=True, index=True)
+    chat = relationship("Chat", back_populates="documents")
 
-class DocumentResponse(DocumentBase):
-    """Schema for document response"""
-    id: int = Field(..., description="Unique document identifier")
-    no_of_pages: int = Field(0, ge=0, description="Number of pages in the document")
-    total_chunks: int = Field(0, ge=0, description="Total number of text chunks")
-    status: str = Field("pending", description="Processing status")
-    uploaded_at: datetime = Field(..., description="Timestamp when document was uploaded")
-    
-    model_config = ConfigDict(from_attributes=True)
-# model_config converts ORM object to Pydantic Model
-
-class DocumentListResponse(BaseModel):
-    """Schema for listing multiple documents"""
-    total: int = Field(..., description="Total number of documents")
-    documents: list[DocumentResponse] = Field(..., description="List of documents")
-    
-    model_config = ConfigDict(from_attributes=True)
+    def __repr__(self):
+        return (
+            f"<Document(id={self.id}, filename='{self.filename}', status='{self.status}', "
+            f"pages={self.no_of_pages}, chunks={self.total_chunks}, path={self.path})>"
+        )

@@ -6,11 +6,14 @@ class StartChatRequest(BaseModel):
     """Request model for starting a chat session"""
 
     user_id: str = Field(..., description="Unique identifier for the user")
+    chat_name: str= Field(..., description="ChatName for the newly created chat")
+    
 
 
 class StartChatResponse(BaseModel):
     """Response model for chat session creation"""
 
+    chat_id: int
     session_id: str
     user_id: str
     created_at: str
@@ -20,7 +23,5 @@ class StartChatResponse(BaseModel):
 
 class ChatQueryRequest(BaseModel):
     session_id: str = Field(..., description="Session id for the chat initilized")
-    document_ids: List[str] = Field(
-        default=[], description="List of all documents uploaded for this session"
-    )
-    query:str= Field(..., description="Query provided by the user")
+    chat_id: int = Field(..., description="Chat ID to identify which documents to query")
+    query: str = Field(..., description="Query provided by the user")

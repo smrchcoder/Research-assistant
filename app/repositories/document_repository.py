@@ -3,7 +3,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from typing import Optional, List
 import logging
 
-from ..models.Document import Document
+from ..schema import Document, Chat
 from ..exceptions import DocumentAlreadyExistsError, DocumentNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -15,7 +15,7 @@ class DocumentRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def create_document(self, filename: str) -> Optional[Document]:
+    def create_document(self, filename: str, path: Optional[str] = None) -> Optional[Document]:
         """
         Create a new document record in the database
         
@@ -39,7 +39,8 @@ class DocumentRepository:
                 filename=filename,
                 no_of_pages=0,
                 total_chunks=0,
-                status="processing"
+                status="processing",
+                path=path,
             )
             
             self.db.add(new_document)
@@ -91,7 +92,8 @@ class DocumentRepository:
         filename: str,
         no_of_pages: Optional[int] = None,
         total_chunks: Optional[int] = None,
-        status: Optional[str] = None
+        status: Optional[str] = None,
+        path: Optional[str] = None,
     ) -> Optional[Document]:
         """
         Update document metadata
@@ -121,6 +123,8 @@ class DocumentRepository:
                 document.total_chunks = total_chunks
             if status is not None:
                 document.status = status
+            if path is not None:
+                document.path = path
             
             self.db.commit()
             self.db.refresh(document)
@@ -188,7 +192,9 @@ class DocumentRepository:
             document = self.get_by_filename(filename)
             if not document:
                 return False
-            
+            # dissociate chat to be safe before deletion
+            if hasattr(document, "chat") and document.chat is not None:
+                document.chat = None
             self.db.delete(document)
             self.db.commit()
             
@@ -198,4 +204,74 @@ class DocumentRepository:
         except SQLAlchemyError as e:
             logger.error(f"Database error deleting document '{filename}': {e}")
             self.db.rollback()
+            raise
+
+    def add_chat_to_document(self, document_id: int, chat_id: int) -> Optional[Document]:
+        """Associate a chat with a document (one-to-many)
+
+        This sets `document.chat_id = chat_id`.
+        """
+        document = self.get_by_id(document_id)
+        if not document:
+            raise DocumentNotFoundError(document_id)
+
+        try:
+            chat = self.db.query(Chat).filter(Chat.id == chat_id).first()
+            if not chat:
+                return None
+
+            document.chat = chat
+            self.db.commit()
+            self.db.refresh(document)
+
+            return document
+        except SQLAlchemyError as e:
+            logger.error(f"Database error associating chat {chat_id} to document {document_id}: {e}")
+            self.db.rollback()
+            raise
+
+    def remove_chat_from_document(self, document_id: int, chat_id: int) -> Optional[Document]:
+        """
+        Remove association between a chat and a document (one-to-many)
+        """
+        document = self.get_by_id(document_id)
+        if not document:
+            raise DocumentNotFoundError(document_id)
+
+        try:
+            # Only clear if the document is assigned to the provided chat_id
+            if document.chat_id == chat_id:
+                document.chat = None
+                self.db.commit()
+                self.db.refresh(document)
+
+            return document
+        except SQLAlchemyError as e:
+            logger.error(f"Database error removing chat {chat_id} from document {document_id}: {e}")
+            self.db.rollback()
+            raise
+
+    def list_chats_for_document(self, document_id: int) -> List[Chat]:
+        """
+        Return the chat associated with the given document (one-to-many)
+        """
+        document = self.get_by_id(document_id)
+        if not document:
+            raise DocumentNotFoundError(document_id)
+
+        return [document.chat] if document.chat is not None else []
+
+    def list_documents_for_chat(self, chat_id: int, skip: int = 0, limit: int = 100) -> List[Document]:
+        """
+        Return documents associated with a chat (paginated)
+        """
+        try:
+            chat = self.db.query(Chat).filter(Chat.id == chat_id).first()
+            if not chat:
+                return []
+
+            # apply pagination on the list of documents
+            return chat.documents[skip: skip + limit]
+        except SQLAlchemyError as e:
+            logger.error(f"Database error fetching documents for chat {chat_id}: {e}")
             raise

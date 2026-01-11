@@ -71,7 +71,7 @@ class Evaluator(LLMAgent):
             missing_aspects=evaluation_data.get("missing_aspects", []),
         )
 
-    def execute(self, context: str, query: str) -> EvaluationResult:
+    def execute(self, context: str, query: str) -> Dict[str, Any]:
         """
         Execute the evaluator agent.
 
@@ -80,6 +80,33 @@ class Evaluator(LLMAgent):
             query: User's question
 
         Returns:
-            EvaluationResult with assessment details
+            Dictionary with evaluation result and reasoning trace
         """
-        return self.evaluate_context(context=context, query=query)
+        # Track reasoning: start evaluation
+        self.add_reasoning_step(
+            "evaluation_start",
+            "Beginning context evaluation",
+            {"context_length": len(context), "query": query[:100]}
+        )
+        
+        evaluation_result = self.evaluate_context(context=context, query=query)
+        
+        # Track reasoning: evaluation complete
+        self.add_reasoning_step(
+            "assessment",
+            f"Context evaluation complete: {'sufficient' if evaluation_result.is_sufficient else 'insufficient'}",
+            {
+                "is_sufficient": evaluation_result.is_sufficient,
+                "confidence": evaluation_result.confidence_score,
+                "missing_aspects_count": len(evaluation_result.missing_aspects)
+            }
+        )
+        
+        # Convert EvaluationResult to dict and add reasoning
+        return {
+            "is_sufficient": evaluation_result.is_sufficient,
+            "confidence_score": evaluation_result.confidence_score,
+            "suggested_followups": evaluation_result.suggested_followups,
+            "missing_aspects": evaluation_result.missing_aspects,
+            "reasoning": self.get_reasoning_trace()
+        }

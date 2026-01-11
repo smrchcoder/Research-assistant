@@ -2,6 +2,7 @@
 
 import logging
 from typing import Any, Dict, List, Optional
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from ..memory import SessionStore
 from ..models import PlannerConfig
@@ -37,16 +38,23 @@ class Synthesizer(LLMAgent):
             config=config,
         )
 
-    def generate_answer(self, context: str, query: str) -> str:
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type(ConnectionError),
+        reraise=True
+    )
+    def generate_answer(self, context: str, query: str, metadatas: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Generate an answer using the LLM based on context and query.
 
         Args:
             context: Formatted context from retrieved documents
             query: User's question
+            metadatas: List of metadata for source citations
 
         Returns:
-            Generated answer text
+            Dictionary with answer and citations
 
         Raises:
             ConnectionError: If LLM API call fails
@@ -54,15 +62,36 @@ class Synthesizer(LLMAgent):
         messages = self._generate_context_prompt(context, query)
         answer = self._call_llm(messages)
         
-        logger.info(f"Generated answer for query: {query[:50]}...")
-        return answer
+        # Extract citations from metadata
+        citations = []
+        if metadatas:
+            seen_sources = set()
+            for meta in metadatas:
+                source_key = (
+                    meta.get('document_id', 'Unknown'),
+                    meta.get('page_number', 'Unknown')
+                )
+                if source_key not in seen_sources:
+                    citations.append({
+                        'document_id': meta.get('document_id', 'Unknown'),
+                        'page_number': meta.get('page_number', 'Unknown'),
+                        'chunk_id': meta.get('chunk_id', 'Unknown')
+                    })
+                    seen_sources.add(source_key)
+        
+        logger.info(f"Generated answer with {len(citations)} citations for query: {query[:50]}...")
+        return {
+            'answer': answer,
+            'citations': citations
+        }
 
     def execute(
         self,
         context: str,
         query: str,
         session_id: str,
-        session_store: SessionStore
+        session_store: SessionStore,
+        metadatas: List[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Execute the synthesizer agent.
@@ -72,13 +101,33 @@ class Synthesizer(LLMAgent):
             query: User's question
             session_id: Session identifier for storing conversation
             session_store: Session storage instance
+            metadatas: List of metadata for source citations
 
         Returns:
-            Dictionary containing the answer and session update status
+            Dictionary containing the answer, citations, session update status, and reasoning trace
         """
-        answer = self.generate_answer(context=context, query=query)
+        # Track reasoning: start synthesis
+        self.add_reasoning_step(
+            "synthesis_start",
+            "Beginning answer generation from context",
+            {"context_length": len(context), "query": query[:100]}
+        )
         
-        results: Dict[str, Any] = {"answer": answer}
+        result = self.generate_answer(context=context, query=query, metadatas=metadatas)
+        answer = result['answer']
+        citations = result['citations']
+        
+        # Track reasoning: answer generated
+        self.add_reasoning_step(
+            "answer_generated",
+            f"Generated answer of {len(answer)} characters with {len(citations)} citations",
+            {"answer_length": len(answer), "citations_count": len(citations)}
+        )
+        
+        results: Dict[str, Any] = {
+            "answer": answer,
+            "citations": citations
+        }
         
         try:
             session_store.add_message(
@@ -87,8 +136,20 @@ class Synthesizer(LLMAgent):
                 question=query
             )
             results["session_updated"] = True
+            self.add_reasoning_step(
+                "session_update",
+                "Successfully updated conversation history",
+                {"session_id": session_id}
+            )
         except Exception as e:
             logger.error(f"Failed to update session: {str(e)}")
             results["session_updated"] = False
-
+            self.add_reasoning_step(
+                "session_update_error",
+                "Failed to update conversation history",
+                {"error": str(e)}
+            )
+        
+        # Add reasoning trace to results
+        results["reasoning"] = self.get_reasoning_trace()
         return results

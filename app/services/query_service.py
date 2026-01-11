@@ -15,16 +15,20 @@ class QueryService:
         self.query_id = str(uuid.uuid4())
         self.embedding_model = settings.openai_embedding_model
 
-    def retrieve_similarities(self, top_k: int = 5) -> Dict[str, Any]:
+    def retrieve_similarities(self, top_k: int = 5, document_filenames: List[str] = None) -> Dict[str, Any]:
         """
         Retrieve similar documents from vector database
+
+        Args:
+            top_k: Number of top results to return
+            document_filenames: Optional list of document filenames to filter by
 
         Returns:
             Search results with documents and metadata
         """
         embeddings = self.convert_query_to_embeddings()
         modified_top_k = min(5, top_k)
-        return self.query_embeddings(top_k=modified_top_k, embeddings=embeddings)
+        return self.query_embeddings(top_k=modified_top_k, embeddings=embeddings, document_filenames=document_filenames)
 
     def convert_query_to_embeddings(self) -> List[float]:
         """
@@ -44,18 +48,26 @@ class QueryService:
             logger.error(f"Error generating embeddings: {e}")
             raise
 
-    def query_embeddings(self, embeddings: List[float], top_k: int) -> Dict[str, Any]:
+    def query_embeddings(self, embeddings: List[float], top_k: int, document_filenames: List[str] = None) -> Dict[str, Any]:
         """
         Search vector database with embedding vector
 
         Args:
             embeddings: Query embedding vector
+            top_k: Number of results to return
+            document_filenames: Optional list of document filenames to filter by
 
         Returns:
             Search results from vector database
         """
         try:
-            results = vector_db_client.search_similar(embeddings, n_results=top_k)
+            # Build where filter if document_filenames provided
+            where_filter = None
+            if document_filenames:
+                where_filter = {"document_id": {"$in": document_filenames}}
+                logger.info(f"Filtering query by {len(document_filenames)} documents")
+            
+            results = vector_db_client.search_similar(embeddings, n_results=top_k, where=where_filter)
             logger.info(f"Retrieved {len(results.get('documents', [[]])[0])} documents")
             return results
         except Exception as e:

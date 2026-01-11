@@ -1,3 +1,2 @@
 from .document_repository import DocumentRepository
-
-__all__ = ["DocumentRepository"]
+from .chat_repository import ChatRepository

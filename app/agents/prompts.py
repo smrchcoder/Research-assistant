@@ -72,4 +72,3 @@ Key principles:
 - Provide clear, well-structured answers
 - Be factual and avoid speculation
 """
-

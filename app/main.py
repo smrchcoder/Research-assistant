@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from .routes import file_router, query_router, chat_router
+from .routes import file_router, chat_router
 from .core import settings, vector_db_client, db_client
 from .memory.redis_client import redis_client
 import logging
@@ -63,7 +63,6 @@ def health_check():
 
 # Include routers with prefix
 app.include_router(file_router, prefix="/api", tags=["documents"])
-app.include_router(query_router, prefix="/api", tags=["queries"])
 app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
 
 # # Include router for query
